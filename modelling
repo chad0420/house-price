@@ -1,0 +1,136 @@
+kfolds = KFold(n_splits=10, shuffle=True, random_state=42)
+
+
+def rmsle(y, y_pred):
+    return np.sqrt(mean_squared_error(y, y_pred))
+
+def cv_rmse(model, X=X):
+    rmse = np.sqrt(-cross_val_score(model, X, y, scoring="neg_mean_squared_error", cv=kfolds, error_score='raise'))
+    return (rmse)
+
+
+#表示使用負的均方誤差作為評分標準。由於 cross_val_score 返回的是負的 MSE
+#因此在這裡取其相反數（即加負號），然後計算其平方根得到 RMSE。
+
+#用於調整模型的超參數（hyperparameters
+#alphas_alt: 這是一個用於正則化的超參數列表，通常用於岭回歸（Ridge Regression）或Lasso回歸（Lasso Regression）等模型
+#alphas2: 這是另一組用於正則化的超參數列表，類似於 alphas_alt，用於調整模型的正則化程度。
+#e_alphas: 這是一個用於彈性網（Elastic Net）模型的 alpha 超參數列表。彈性網是一種結合了L1和L2正則化的線性回歸模型，其中 e_alphas 中的值用於調整正則化的總程度。
+#e_l1ratio: 這是彈性網模型的另一個超參數，用於調整L1正則化和L2正則化之間的權衡比例。較大的值將更多的權重放在L1正則化上，而較小的值則更多地依賴於L2正則化。
+alphas_alt = [14.5, 14.6, 14.7, 14.8, 14.9, 15, 15.1, 15.2, 15.3, 15.4, 15.5]
+alphas2 = [5e-05, 0.0001, 0.0002, 0.0003, 0.0004, 0.0005, 0.0006, 0.0007, 0.0008]
+e_alphas = [0.0001, 0.0002, 0.0003, 0.0004, 0.0005, 0.0006, 0.0007]
+e_l1ratio = [0.8, 0.85, 0.9, 0.95, 0.99, 1]
+
+#RobustScaler() 對數據進行縮放處理（使用中位數和四分位數而不是平均值和標準差，使其更能抵抗异常值
+#应用RidgeCV，这种带有内置交叉验证的岭回归方法用于确定最佳的正则化参数（alpha）。
+ridge = make_pipeline(RobustScaler(), RidgeCV(alphas=alphas_alt, cv=kfolds))
+
+#在使用RobustScaler缩放后，使用LassoCV进行套索回归，它同样包含内置的交叉验证。
+lasso = make_pipeline(RobustScaler(), LassoCV(max_iter=10000000, alphas=alphas2, random_state=42, cv=kfolds))
+
+#弹性网回归（ElasticNetCV）:流程：结合了套索回归和岭回归方法的特点。
+elasticnet = make_pipeline(RobustScaler(), ElasticNetCV(max_iter=10000000, alphas=e_alphas, cv=kfolds, l1_ratio=e_l1ratio))                                
+
+#支持向量回归（SVR）:流程：应用RobustScaler后跟SVR，这是一种用于回归任务的支持向量机。
+svr = make_pipeline(RobustScaler(), SVR(C= 20, epsilon= 0.008, gamma=0.0003,))
+
+gbr = GradientBoostingRegressor(
+    n_estimators=3000, 
+    learning_rate=0.05, 
+    max_depth=4, 
+    max_features='sqrt', 
+    min_samples_leaf=15, 
+    min_samples_split=10, 
+    loss='huber', 
+    random_state =42)    
+
+lightgbm = LGBMRegressor(objective='regression', 
+                                       num_leaves=4,
+                                       learning_rate=0.01, 
+                                       n_estimators=5000,
+                                       max_bin=200, 
+                                       bagging_fraction=0.75,
+                                       bagging_freq=5, 
+                                       bagging_seed=7,
+                                       feature_fraction=0.2,
+                                       feature_fraction_seed=7,
+                                       verbose=-1,
+                                       )
+
+xgboost = XGBRegressor(learning_rate=0.01,n_estimators=3460,
+                                     max_depth=3, min_child_weight=0,
+                                     gamma=0, subsample=0.7,
+                                     colsample_bytree=0.7,
+                                     objective='reg:linear', nthread=-1,
+                                     scale_pos_weight=1, seed=27,
+                                     reg_alpha=0.00006)
+
+stack_gen = StackingCVRegressor(regressors=
+                                (ridge, lasso, elasticnet, gbr, xgboost, lightgbm),
+                                meta_regressor=xgboost,
+                                use_features_in_secondary=True)
+score = cv_rmse(ridge , X)
+print("ridge: {:.4f} ({:.4f})\n".format(score.mean(), score.std()), datetime.now(), )
+score = cv_rmse(lasso , X)
+print("LASSO: {:.4f} ({:.4f})\n".format(score.mean(), score.std()), datetime.now(), )
+score = cv_rmse(elasticnet, X)
+print("elastic net: {:.4f} ({:.4f})\n".format(score.mean(), score.std()), datetime.now(), )
+score = cv_rmse(svr)
+print("SVR: {:.4f} ({:.4f})\n".format(score.mean(), score.std()), datetime.now(), )
+score = cv_rmse(lightgbm)
+print("lightgbm: {:.4f} ({:.4f})\n".format(score.mean(), score.std()), datetime.now(), )
+score = cv_rmse(xgboost)
+print("xgboost: {:.4f} ({:.4f})\n".format(score.mean(), score.std()), datetime.now(), )
+
+print('START Fit')
+
+print('stack_gen')
+stack_gen_model = stack_gen.fit(np.array(X), np.array(y))
+
+print('elasticnet')
+elastic_model_full_data = elasticnet.fit(X, y)
+
+print('Lasso')
+lasso_model_full_data = lasso.fit(X, y)
+
+print('Ridge')
+ridge_model_full_data = ridge.fit(X, y)
+
+print('Svr')
+svr_model_full_data = svr.fit(X, y)
+
+print('GradientBoosting')
+gbr_model_full_data = gbr.fit(X, y)
+
+print('xgboost')
+xgb_model_full_data = xgboost.fit(X, y)
+
+print('lightgbm')
+lgb_model_full_data = lightgbm.fit(X, y)
+
+def blend_models_predict(X):
+    return ((0.1 * elastic_model_full_data.predict(X)) + \
+            (0.05 * lasso_model_full_data.predict(X)) + \
+            (0.1 * ridge_model_full_data.predict(X)) + \
+            (0.1 * svr_model_full_data.predict(X)) + \
+            (0.1 * gbr_model_full_data.predict(X)) + \
+            (0.15 * xgb_model_full_data.predict(X)) + \
+            (0.1 * lgb_model_full_data.predict(X)) + \
+            (0.3 * stack_gen_model.predict(np.array(X))))
+
+print('RMSLE score on train data:')
+print(rmsle(y, blend_models_predict(X)))
+
+print('Predict submission')
+submission = pd.read_csv(r"C:\Users\user\house price\sample_submission.csv")
+submission.iloc[:,1] = (np.expm1(blend_models_predict(X_sub)))
+
+q1 = submission['SalePrice'].quantile(0.0042)
+q2 = submission['SalePrice'].quantile(0.99)
+# Quantiles helping us get some extreme values for extremely low or high values 
+submission['SalePrice'] = submission['SalePrice'].apply(lambda x: x if x > q1 else x*0.77)
+submission['SalePrice'] = submission['SalePrice'].apply(lambda x: x if x < q2 else x*1.1)
+submission.to_csv("submission.csv", index=False)
+
+
