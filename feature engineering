@@ -1,0 +1,57 @@
+# Removing features that are not very useful . 
+#This can be understood only by doing proper EDA on data
+features = features.drop(['Utilities', 'Street', 'PoolQC',], axis=1)
+
+# Adding new features . Make sure that you understand this.  
+#他直接將兩行資料加起來，變成新的一行
+
+features['YrBltAndRemod']=features['YearBuilt']+features['YearRemodAdd']
+features['TotalSF']=features['TotalBsmtSF'] + features['1stFlrSF'] + features['2ndFlrSF']
+
+features['Total_sqr_footage'] = (features['BsmtFinSF1'] + features['BsmtFinSF2'] +
+                                 features['1stFlrSF'] + features['2ndFlrSF'])
+
+features['Total_Bathrooms'] = (features['FullBath'] + (0.5 * features['HalfBath']) +
+                               features['BsmtFullBath'] + (0.5 * features['BsmtHalfBath']))
+
+features['Total_porch_sf'] = (features['OpenPorchSF'] + features['3SsnPorch'] +
+                              features['EnclosedPorch'] + features['ScreenPorch'] +
+                              features['WoodDeckSF'])
+
+features['haspool'] = features['PoolArea'].apply(lambda x: 1 if x > 0 else 0)
+features['has2ndfloor'] = features['2ndFlrSF'].apply(lambda x: 1 if x > 0 else 0)
+features['hasgarage'] = features['GarageArea'].apply(lambda x: 1 if x > 0 else 0)
+features['hasbsmt'] = features['TotalBsmtSF'].apply(lambda x: 1 if x > 0 else 0)
+features['hasfireplace'] = features['Fireplaces'].apply(lambda x: 1 if x > 0 else 0)
+
+#Get_dummies converts Categorical data to numerical , as models don't work with Text data .
+final_features = pd.get_dummies(features).reset_index(drop=True)
+final_features.shape
+
+df = pd.DataFrame({'Name':['John Smith', 'Mary Brown'],
+                     'Gender':['M', 'F'], 'Smoker':['Y', 'N']})
+print(df)
+
+df_with_dummies = pd.get_dummies(df, columns=['Gender', 'Smoker'])
+print(df_with_dummies)
+
+final_features.columns[20:50]
+
+X = final_features.iloc[:len(y), :]
+X_sub = final_features.iloc[len(y):, :]
+X.shape, y.shape, X_sub.shape
+
+outliers = [30, 88, 462, 631, 1322]
+X = X.drop(X.index[outliers])
+y = y.drop(y.index[outliers])
+
+overfit = []
+for i in X.columns:
+    counts = X[i].value_counts()
+    zeros = counts.iloc[0]
+    if zeros / len(X) * 100 > 99.94:
+        overfit.append(i)
+        
+overfit = list(overfit)
+X = X.drop(overfit, axis=1)
+X_sub = X_sub.drop(overfit, axis=1)
